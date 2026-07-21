@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WaterWarmth — Embedded Pilot Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+  :root{
+    --deep:      #0b2b3c;
+    --tide:      #123b52;
+    --current:   #1f6f8b;
+    --shallow:   #7fb9c9;
+    --foam:      #eef5f3;
+    --ember:     #d9773f;
+    --slate:     #4a5a5f;
+    --line:      rgba(255,255,255,0.10);
+    --font-display: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-mono: 'SF Mono', 'Consolas', monospace;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; height:100%; background:var(--deep); font-family:var(--font-body); color:var(--foam); }
+
+#app {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+  /* ---------- Sidebar ---------- */
+  #sidebar{
+    width: 412px;
+    min-width: 340px;
+    max-width: 440px;
+    background: linear-gradient(180deg, var(--deep), #081f2c 90%);
+    border-right: 1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    z-index: 500;
+  }
+  header.brand{
+    padding: 26px 24px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-style: normal;
+    font-size: 14px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: white;
+    margin: 0 0 8px;
+  }
+  h1{
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 28px;
+    line-height: 1.15;
+    margin: 0 0 10px;
+    color: #fff;
+  }
+  h1 em{ color: var(--ember); font-style: normal; }
+  .lede{
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #b9cdd4;
+    margin: 0;
+  }
+
+  .controls{
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--line);
+    display:flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .chip{
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 6px 12px;
+    border-radius: 100px;
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,0.03);
+    color: #cfe2e7;
+    cursor: pointer;
+    transition: all .15s ease;
+    user-select:none;
+    text-decoration:none;
+    display:inline-flex;
+    align-items:center;
+  }
+  .chip:hover{ border-color: var(--shallow); }
+  .chip.active{
+    background: var(--current);
+    border-color: var(--current);
+    color: #fff;
+  }
+  .chip .dot{
+    display:inline-block;
+    width:7px; height:7px;
+    border-radius:50%;
+    margin-right:6px;
+    vertical-align:middle;
+  }
+
+  #list{
+    flex:1;
+    overflow-y: auto;
+    padding: 6px 0 20px;
+  }
+  #list::-webkit-scrollbar{ width:8px; }
+  #list::-webkit-scrollbar-thumb{ background: var(--line); border-radius:4px; }
+
+  .site-card{
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    transition: background .15s ease;
+  }
+  .site-card:hover{ background: rgba(255,255,255,0.035); }
+  .site-card.selected{
+    background: rgba(31,111,139,0.22);
+    border-left: 3px solid var(--ember);
+    padding-left: 21px;
+  }
+  .site-top{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .site-name{
+    font-family: var(--font-display);
+    font-size: 17px;
+    color: #fff;
+  }
+  .site-country{
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--shallow);
+    white-space: nowrap;
+  }
+  .site-summary{
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #a9bec4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .status-pill{
+    display:inline-block;
+    margin-top:7px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 100px;
+  }
+  .status-pill.assessed{ background: rgba(217,119,63,0.18); color: var(--ember); }
+  .status-pill.pending{ background: rgba(127,185,201,0.15); color: var(--shallow); }
+
+  footer.credit{
+    padding: 12px 24px;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: #5b7581;
+    letter-spacing: 0.03em;
+  }
+
+  /* ---------- Map ---------- */
+  #map-wrap{ flex:1; position:relative; }
+  #map{ height:100%; width:100%; background: var(--deep); }
+
+  .leaflet-popup-content-wrapper{
+    background: var(--tide);
+    color: var(--foam);
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+  }
+  .leaflet-popup-tip{ background: var(--tide); }
+  .leaflet-popup-content{ margin: 16px 18px; width: 320px !important; }
+  .leaflet-popup-close-button{ color: var(--shallow) !important; }
+
+  .pop-country{
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--shallow);
+    margin: 0 0 4px;
+  }
+  .pop-title{
+    font-family: var(--font-display);
+    font-size: 19px;
+    margin: 0 0 8px;
+    color: #fff;
+  }
+  .pop-summary{
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #cfe2e7;
+    margin: 0 0 10px;
+  }
+  .pop-btn{
+    display:inline-block;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #fff;
+    background: var(--ember);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+  }
+
+  /* ---------- Detail drawer ---------- */
+  #drawer{
+    position: absolute;
+    top: 0; right: -420px;
+    width: 400px;
+    height: 100%;
+    background: linear-gradient(180deg, var(--tide), #0a2534);
+    border-left: 1px solid var(--line);
+    transition: right .32s cubic-bezier(.2,.8,.2,1);
+    z-index: 900;
+    display:flex;
+    flex-direction:column;
+  }
+  #drawer.open{ right: 0; }
+  #drawer-head{
+    padding: 5px 20px 10px;
+    border-bottom: 1px solid var(--line);
+    position: relative;
+    margin-top: -6px;
+    height: 70px;
+  }
+  #drawer-close{
+    position:absolute; top:18px; right:20px;
+    background:none; border:none; color: var(--shallow);
+    font-size: 20px; cursor:pointer; line-height:1;
+  }
+  #drawer-country{
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--shallow);
+    margin: 0 0 6px;
+    margin-top: 15px;
+  }
+  #drawer-title{
+    font-family: var(--font-display);
+    font-size: 22px;
+    color: #fff;
+    margin-top: -5px;
+    padding-right: 30px;
+  }
+  #drawer-body{
+    flex:1;
+    overflow-y:auto;
+    padding: 18px 24px 30px;
+  }
+  #drawer-body::-webkit-scrollbar{ width:8px; }
+  #drawer-body::-webkit-scrollbar-thumb{ background: var(--line); border-radius:4px; }
+
+  .section-label{
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ember);
+    margin: 22px 0 8px;
+  }
+  .section-label:first-child{ margin-top: 0; }
+  .section-text{
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: #d6e6ea;
+    white-space: pre-line;
+  }
+  .section-text.empty{ color: #607680; font-style: italic; }
+
+  .drawer-summary{
+    padding: 0 0 18px;
+  }
+  .drawer-summary .section-label{ margin-top:0; }
+  .drawer-summary p{
+    margin:0;
+    color:#d6e6ea;
+    font-size:13.5px;
+    line-height:1.65;
+  }
+  .drawer-accordion{
+    margin-top:12px;
+    border:1px solid rgba(255,255,255,.12);
+    border-radius:10px;
+    overflow:hidden;
+    background:rgba(255,255,255,.035);
+  }
+  .drawer-accordion summary{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    min-height:52px;
+    padding:14px 42px 14px 16px;
+    color:#fff;
+    cursor:pointer;
+    list-style:none;
+    font-family:var(--font-display);
+    font-size:18px;
+    user-select:none;
+  }
+  .drawer-accordion summary::-webkit-details-marker{ display:none; }
+  .drawer-accordion summary::after{
+    content:'+';
+    position:absolute;
+    right:16px;
+    top:50%;
+    transform:translateY(-50%);
+    color:var(--shallow);
+    font-family:var(--font-body);
+    font-size:20px;
+    line-height:1;
+  }
+  .drawer-accordion[open] summary::after{ content:'−'; }
+  .drawer-accordion summary:hover{ background:rgba(255,255,255,.045); }
+  .drawer-accordion summary:focus-visible{
+    outline:3px solid rgba(127,185,201,.35);
+    outline-offset:-3px;
+  }
+  .drawer-accordion summary small{
+    color:#8eabb4;
+    font:9px var(--font-mono);
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    text-align:right;
+  }
+  .accordion-content{
+    padding:4px 16px 16px;
+    border-top:1px solid rgba(255,255,255,.1);
+  }
+  .drawer-subsection{
+    padding:15px 0 0;
+  }
+  .drawer-subsection + .drawer-subsection{
+    margin-top:15px;
+    border-top:1px solid rgba(255,255,255,.08);
+  }
+  .drawer-subsection h3{
+    margin:0 0 6px;
+    color:var(--ember);
+    font-family:var(--font-mono);
+    font-size:10px;
+    font-weight:400;
+    letter-spacing:.08em;
+    line-height:1.4;
+    text-transform:uppercase;
+  }
+  .drawer-subsection p,
+  .accordion-empty{
+    margin:0;
+    color:#d6e6ea;
+    font-size:13px;
+    line-height:1.62;
+  }
+  .accordion-empty{
+    padding-top:14px;
+    color:#8eabb4;
+    font-style:italic;
+  }
+
+  @media (max-width: 860px){
+    #sidebar{ position:absolute; z-index: 1000; width: 86vw; max-width: 360px; height:100%; transform: translateX(-100%); transition: transform .28s ease; }
+    #sidebar.mobile-open{ transform: translateX(0); }
+    #menu-toggle{
+      position:absolute; top:14px; left:14px; z-index: 1001;
+      background: var(--tide); color:#fff; border:1px solid var(--line);
+      border-radius: 8px; padding:8px 12px; font-family: var(--font-mono); font-size:11px; cursor:pointer;
+    }
+    #drawer{ width: 92vw; right: -100vw; }
+  }
+  @media (min-width: 861px){ #menu-toggle{ display:none; } }
+
+
+  /* Embedded findings-page map: markers + case drawer only */
+#app {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#sidebar,
+#menu-toggle {
+  display: none !important;
+}
+
+#map-wrap {
+  width: 100%;
+  height: 100%;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+  #drawer{
+    width:min(400px, 88%);
+    right:-420px;
+  }
+  #drawer.open{ right:0; }
+  .map-legend{
+    position:absolute;
+    left:12px;
+    bottom:12px;
+    z-index:700;
+    display:flex;
+    gap:12px;
+    padding:8px 11px;
+    border:1px solid rgba(255,255,255,.14);
+    border-radius:8px;
+    background:rgba(11,43,60,.9);
+    box-shadow:0 6px 18px rgba(0,0,0,.28);
+    color:#d6e6ea;
+    font:10px var(--font-mono);
+    letter-spacing:.03em;
+  }
+  .map-legend span{display:inline-flex;align-items:center;gap:6px}
+  .map-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+  @media (max-width:620px){
+    #drawer{width:94%;right:-100%;}
+    .leaflet-control-zoom{margin-top:10px !important;margin-left:10px !important}
+    .map-legend{left:10px;bottom:10px;gap:9px;padding:7px 9px;font-size:9px}
+  }
+
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map-wrap">
+    <div id="map" aria-label="Interactive map of aquathermal pilot sites"></div>
+    <div class="map-legend" aria-label="Map legend">
+      <span><i style="background:#d9773f"></i>Assessed</span>
+    </div>
+    <aside id="drawer" aria-live="polite" aria-label="Pilot site details">
+      <div id="drawer-head">
+        <button id="drawer-close" type="button" aria-label="Close site details">✕</button>
+        <p id="drawer-country"></p>
+        <h2 id="drawer-title"></h2>
+      </div>
+      <div id="drawer-body"></div>
+    </aside>
+  </div>
+</div>
+
+<script src="sites-data.js"></script>
+<script>
+const SITES = window.SITES || [];
+
+const COLORS = { assessed: '#d9773f', pending: '#7fb9c9' };
+
+function cleanCoord(v){ return Number(v); }
+function isAssessed(site){ return Boolean(site.assessed); }
+
+// ---- Map setup ----
+const map = L.map('map', { zoomControl: true, minZoom: 4 }).setView([51.6, 4.5], 7);
+
+const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  subdomains: 'abc',
+  maxZoom: 16
+}).addTo(map);
+
+// Fallback banner if tiles can't reach the network (e.g. restricted preview sandbox)
+let tileErrorShown = false;
+tileLayer.on('tileerror', () => {
+  if (tileErrorShown) return;
+  tileErrorShown = true;
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:1000;background:#0b2b3c;color:#eef5f3;border:1px solid rgba(255,255,255,0.15);padding:8px 16px;border-radius:8px;font-family:-apple-system,sans-serif;font-size:12.5px;max-width:80%;text-align:center;box-shadow:0 8px 20px rgba(0,0,0,0.4);';
+  banner.textContent = 'Basemap tiles could not load (no network access in this view), but site markers below are still fully interactive.';
+  document.getElementById('map-wrap').appendChild(banner);
+});
+
+const markers = {}; // site id -> marker
+const bounds = [];
+
+function makeIcon(assessed){
+  const color = assessed ? COLORS.assessed : COLORS.pending;
+  const html = `
+    <div style="
+      width:16px;height:16px;border-radius:50%;
+      background:${color};
+      border:2px solid rgba(255,255,255,0.85);
+      box-shadow:0 0 0 4px ${color}33;
+    "></div>`;
+  return L.divIcon({ html, className: '', iconSize:[16,16], iconAnchor:[8,8] });
+}
+
+
+SITES.forEach(site => {
+  const lat = cleanCoord(site.coordinates?.latitude), lng = cleanCoord(site.coordinates?.longitude);
+  if (isNaN(lat) || isNaN(lng)) return;
+  bounds.push([lat, lng]);
+  const marker = L.marker([lat, lng], {
+    icon: makeIcon(isAssessed(site)),
+    keyboard: true,
+    title: `${site.name}, ${site.country}`
+  }).addTo(map);
+  marker.bindTooltip(site.name, { direction: 'top', offset: [0, -9] });
+  marker.on('click', () => {
+    map.panTo(marker.getLatLng(), { animate: true });
+    openDrawer(site.id);
+  });
+  markers[site.id] = marker;
+});
+
+if (bounds.length) map.fitBounds(bounds, { padding: [60,60] });
+
+// ---- Drawer ----
+const drawer = document.getElementById('drawer');
+const drawerTitle = document.getElementById('drawer-title');
+const drawerCountry = document.getElementById('drawer-country');
+const drawerBody = document.getElementById('drawer-body');
+
+function escapeHTML(value){
+  return String(value ?? '').replace(/[&<>"]/g, character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;'
+  })[character]);
+}
+
+function renderSections(sections, emptyMessage){
+  if (!Array.isArray(sections) || sections.length === 0) {
+    return `<p class="accordion-empty">${escapeHTML(emptyMessage)}</p>`;
+  }
+
+  return sections.map(section => `
+    <section class="drawer-subsection">
+      <h3>${escapeHTML(section.heading)}</h3>
+      <p>${escapeHTML(section.text)}</p>
+    </section>
+  `).join('');
+}
+
+function accordion(title, sections, emptyMessage){
+  const count = Array.isArray(sections) ? sections.length : 0;
+  const meta = count ? `${count} ${count === 1 ? 'section' : 'sections'}` : 'Unassessed';
+
+  return `
+    <details class="drawer-accordion">
+      <summary>
+        <span>${escapeHTML(title)}</span>
+        <small>${escapeHTML(meta)}</small>
+      </summary>
+      <div class="accordion-content">
+        ${renderSections(sections, emptyMessage)}
+      </div>
+    </details>
+  `;
+}
+
+function openDrawer(id){
+  const site = SITES.find(candidate => candidate.id === id);
+  if (!site) return;
+
+  drawerCountry.textContent = site.country;
+  drawerTitle.textContent = site.name;
+  drawerBody.innerHTML = `
+    <section class="drawer-summary">
+      <div class="section-label">Summary</div>
+      <p>${escapeHTML(site.summary || 'No summary has been added yet.')}</p>
+    </section>
+    ${accordion('Project details', site.projectDetails, 'Project details have not yet been documented.')}
+    ${accordion('Research findings', site.findings, 'This site has not yet been assessed in the research findings.')}
+  `;
+
+  drawerBody.querySelectorAll('.drawer-accordion').forEach(item => {
+    item.addEventListener('toggle', () => {
+      if (!item.open) return;
+      drawerBody.querySelectorAll('.drawer-accordion').forEach(other => {
+        if (other !== item) other.open = false;
+      });
+    });
+  });
+
+  drawer.classList.add('open');
+  drawerBody.scrollTop = 0;
+}
+
+document.getElementById('drawer-close').addEventListener('click', () => drawer.classList.remove('open'));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') drawer.classList.remove('open');
+});
+
+</script>
+</body>
+</html>
